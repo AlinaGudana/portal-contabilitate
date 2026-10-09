@@ -40,9 +40,9 @@ DEFAULT_USERS = {
 DEFAULT_SETTINGS = {
     "smtp_server": "smtp.gmail.com",
     "smtp_port": 587,
-    "sender_email": "contabilitate.demo@gmail.com",
-    "sender_password": "xxxx xxxx xxxx xxxx",
-    "notification_email": "contabil.sef@biroucontabilitate.ro",
+    "sender_email": "regnskabsrl@gmail.com",
+    "sender_password": "",
+    "notification_email": "regnskabsrl@gmail.com",
     "enable_notifications": True
 }
 
@@ -97,6 +97,9 @@ def send_email_notification(company_name, year, month, uploaded_files_info):
         sender_password = settings.get("sender_password")
         receiver_email = settings.get("notification_email")
 
+        if not sender_password or len(sender_password.strip()) == 0:
+            return False, "Parola de e-mail nu este configurata in panoul Admin."
+
         subject = f"🔔 Documente noi incarcate de: {company_name} ({month}/{year})"
         file_list_str = "\n".join([f"- {name} ({size:.1f} KB)" for name, size in uploaded_files_info])
         data_ora = datetime.now().strftime("%d-%m-%Y la %H:%M")
@@ -110,7 +113,7 @@ Clientul '{company_name}' a incarcat documente noi in portalul de contabilitate!
 - Perioada: {month} / {year}
 - Data & Ora: {data_ora}
 
-📄 Fisiere incarcate:
+📄 Fisiere / Poze incarcate:
 {file_list_str}
 
 Te poti conecta in portal pentru a vizualiza si descarca documentele sau arhiva ZIP completa.
@@ -191,7 +194,7 @@ else:
     if st.session_state.role == "client":
         company_folder = st.session_state.company
         st.markdown(f"<h2>📁 Portal Client - {company_folder}</h2>", unsafe_allow_html=True)
-        st.write("Incarca documentele contabile lunare pentru biroul de contabilitate.")
+        st.write("Incarca documentele contabile lunare (fisiere sau poze).")
 
         col_an, col_luna = st.columns(2)
         with col_an:
@@ -209,28 +212,52 @@ else:
 
         st.markdown(f"**Folder de salvare:** `{company_folder} / {an_selectat} / {luna_selectata}`")
 
-        uploaded_files = st.file_uploader(
-            "Selecteaza sau trage fisierele aici (PDF, XML, PNG, XLSX):",
-            accept_multiple_files=True
-        )
+        tab_file, tab_cam = st.tabs(["📁 Incarca Fisiere / Poze din Telefon", "📷 Fa o Poza cu Camera Foto"])
 
-        if uploaded_files:
-            if st.button("💾 Salveaza Fisierele & Notifica Contabilul"):
-                uploaded_files_info = []
-                for file in uploaded_files:
-                    file_path = os.path.join(target_dir, file.name)
-                    file_size_kb = len(file.getbuffer()) / 1024
-                    with open(file_path, "wb") as f:
-                        f.write(file.getbuffer())
-                    uploaded_files_info.append((file.name, file_size_kb))
-                
-                st.success(f"✅ {len(uploaded_files)} fisiere au fost salvate cu succes!")
-                
-                success, msg = send_email_notification(company_folder, an_selectat, luna_selectata, uploaded_files_info)
-                if success:
-                    st.info("📧 Notificarea pe e-mail a fost trimisa catre biroul de contabilitate!")
-                else:
-                    st.warning(f"Fisierele au fost salvate, dar e-mailul nu a putut fi trimis. Detalii: {msg}")
+        uploaded_files_info = []
+
+        with tab_file:
+            uploaded_files = st.file_uploader(
+                "Selecteaza fisiere (PDF, XML, PNG, JPG, XLSX, HEIC):",
+                accept_multiple_files=True,
+                type=["pdf", "xml", "png", "jpg", "jpeg", "xlsx", "heic"]
+            )
+
+            if uploaded_files:
+                if st.button("💾 Salveaza Fisierele & Notifica Contabilul", key="btn_files"):
+                    for file in uploaded_files:
+                        file_path = os.path.join(target_dir, file.name)
+                        file_size_kb = len(file.getbuffer()) / 1024
+                        with open(file_path, "wb") as f:
+                            f.write(file.getbuffer())
+                        uploaded_files_info.append((file.name, file_size_kb))
+                    
+                    st.success(f"✅ {len(uploaded_files)} fisiere au fost salvate cu succes!")
+                    success, msg = send_email_notification(company_folder, an_selectat, luna_selectata, uploaded_files_info)
+                    if success:
+                        st.info("📧 Notificarea pe e-mail a fost trimisa catre biroul de contabilitate!")
+                    else:
+                        st.warning(f"Fisierele au fost salvate, dar e-mailul nu a putut fi trimis. Detalii: {msg}")
+
+        with tab_cam:
+            camera_photo = st.camera_input("Captureaza bonul / factura cu camera telefonului:")
+            if camera_photo:
+                st.image(camera_photo, caption="Previzualizare poza capturata", use_container_width=True)
+                if st.button("💾 Salveaza Poza Capturata", key="btn_cam"):
+                    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    photo_name = f"Poza_Camera_{timestamp_str}.jpg"
+                    photo_path = os.path.join(target_dir, photo_name)
+                    photo_size_kb = len(camera_photo.getbuffer()) / 1024
+                    
+                    with open(photo_path, "wb") as f:
+                        f.write(camera_photo.getbuffer())
+                    
+                    uploaded_files_info.append((photo_name, photo_size_kb))
+                    st.success(f"✅ Poza '{photo_name}' a fost salvata cu succes!")
+                    
+                    success, msg = send_email_notification(company_folder, an_selectat, luna_selectata, uploaded_files_info)
+                    if success:
+                        st.info("📧 Notificarea pe e-mail a fost trimisa catre biroul de contabilitate!")
 
         st.markdown("---")
         
@@ -350,11 +377,11 @@ else:
 
             with st.form("email_settings_form"):
                 enable = st.checkbox("Activeaza notificarile pe e-mail", value=current_settings.get("enable_notifications", True))
-                dest_email = st.text_input("E-mail Contabil (unde primesti alertele):", value=current_settings.get("notification_email", ""))
+                dest_email = st.text_input("E-mail Contabil (unde primesti alertele):", value=current_settings.get("notification_email", "regnskabsrl@gmail.com"))
                 smtp_srv = st.text_input("Server SMTP (ex: smtp.gmail.com):", value=current_settings.get("smtp_server", "smtp.gmail.com"))
                 smtp_p = st.number_input("Port SMTP:", value=int(current_settings.get("smtp_port", 587)))
-                sender_e = st.text_input("E-mail Expeditor (contul folosit pentru trimitere):", value=current_settings.get("sender_email", ""))
-                sender_p = st.text_input("Parola / App Password Expeditor:", value=current_settings.get("sender_password", ""), type="password")
+                sender_e = st.text_input("E-mail Expeditor (contul folosit pentru trimitere):", value=current_settings.get("sender_email", "regnskabsrl@gmail.com"))
+                sender_p = st.text_input("Parola / App Password Expeditor (16 caractere Google):", value=current_settings.get("sender_password", ""), type="password")
 
                 save_st_btn = st.form_submit_button("Salveaza Setarile E-mail")
 
